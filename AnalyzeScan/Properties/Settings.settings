@@ -11,5 +11,110 @@
     <Setting Name="EnableXcalibur" Type="System.Boolean" Scope="Application">
       <Value Profile="(Default)">True</Value>
     </Setting>
+    <Setting Name="AdditionalParamsToShow" Type="System.Collections.Specialized.StringCollection" Scope="Application">
+      <Value Profile="(Default)">&lt;?xml version="1.0" encoding="utf-16"?&gt;
+&lt;ArrayOfString xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"&gt;
+  &lt;string&gt;Accumulation Time&lt;/string&gt;
+  &lt;string&gt;Accumulation Time Averaged&lt;/string&gt;
+  &lt;string&gt;Auto MS/MS&lt;/string&gt;
+  &lt;string&gt;Averages&lt;/string&gt;
+  &lt;string&gt;Averages Made&lt;/string&gt;
+  &lt;string&gt;Compound Stability&lt;/string&gt;
+  &lt;string&gt;Count of Scans&lt;/string&gt;
+  &lt;string&gt;ICC Actual&lt;/string&gt;
+  &lt;string&gt;ICC Target&lt;/string&gt;
+  &lt;string&gt;Ion Polarity&lt;/string&gt;
+  &lt;string&gt;Manual MS(n)&lt;/string&gt;
+  &lt;string&gt;Mass Range Mode&lt;/string&gt;
+  &lt;string&gt;MRM&lt;/string&gt;
+  &lt;string&gt;Multiplier Gain Target&lt;/string&gt;
+  &lt;string&gt;Ready Polarity&lt;/string&gt;
+  &lt;string&gt;Scan Begin&lt;/string&gt;
+  &lt;string&gt;Scan End&lt;/string&gt;
+  &lt;string&gt;Start Polarity&lt;/string&gt;
+  &lt;string&gt;Stop Polarity&lt;/string&gt;
+  &lt;string&gt;Target Mass&lt;/string&gt;
+  &lt;string&gt;Trap Drive&lt;/string&gt;
+  &lt;string&gt;Trap Drive Level&lt;/string&gt;
+&lt;/ArrayOfString&gt;</Value>
+    </Setting>
+    <Setting Name="SaveAsPdfFilter" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">Adobe Acrobat PDF files (*.pdf)|*.pdf|All files (*.*)|*.*</Value>
+    </Setting>
+    <Setting Name="SaveAsMzXmlFilter" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">MzXML files (*.mzxml)|*.mzxml|All files (*.*)|*.*</Value>
+    </Setting>
+    <Setting Name="IntensityCuttoffPercentage" Type="System.Decimal" Scope="Application">
+      <Value Profile="(Default)">0.1</Value>
+    </Setting>
+    <Setting Name="ReportData" Type="System.Collections.Specialized.StringCollection" Scope="Application">
+      <Value Profile="(Default)">&lt;?xml version="1.0" encoding="utf-16"?&gt;
+&lt;ArrayOfString xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"&gt;
+  &lt;string&gt;Accumulation_Time&lt;/string&gt;
+  &lt;string&gt;Accumulation_Time_Averaged&lt;/string&gt;
+  &lt;string&gt;Averages_Made&lt;/string&gt;
+  &lt;string&gt;Mass_Range_Mode&lt;/string&gt;
+  &lt;string&gt;Ion_Polarity&lt;/string&gt;
+  &lt;string&gt;Manual_MSn&lt;/string&gt;
+  &lt;string&gt;MRM&lt;/string&gt;
+  &lt;string&gt;Auto_MSMS&lt;/string&gt;
+  &lt;string&gt;Averages&lt;/string&gt;
+  &lt;string&gt;Start_Polarity&lt;/string&gt;
+  &lt;string&gt;Stop_Polarity&lt;/string&gt;
+  &lt;string&gt;Ready_Polarity&lt;/string&gt;
+  &lt;string&gt;ICC_Target&lt;/string&gt;
+  &lt;string&gt;Multiplier_Gain_Target&lt;/string&gt;
+  &lt;string&gt;Scan_Begin&lt;/string&gt;
+  &lt;string&gt;Scan_End&lt;/string&gt;
+  &lt;string&gt;Count_of_Scans&lt;/string&gt;
+  &lt;string&gt;Target_Mass&lt;/string&gt;
+  &lt;string&gt;Compound_Stability&lt;/string&gt;
+  &lt;string&gt;Trap_Drive_Level&lt;/string&gt;
+  &lt;string&gt;Trap_Drive&lt;/string&gt;
+  &lt;string&gt;ICC_Actual&lt;/string&gt;
+&lt;/ArrayOfString&gt;</Value>
+    </Setting>
+    <Setting Name="LimpReportData" Type="System.Collections.Specialized.StringCollection" Scope="Application">
+      <Value Profile="(Default)">&lt;?xml version="1.0" encoding="utf-16"?&gt;
+&lt;ArrayOfString xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"&gt;
+  &lt;string&gt;Accumulation Time Averaged,Accumulation_Time_Averaged;Footer&lt;/string&gt;
+  &lt;string&gt;Averages Made,Averages_Made;Footer&lt;/string&gt;
+  &lt;string&gt;Mass Range Mode,Mass_Range_Mode;Footer&lt;/string&gt;
+  &lt;string&gt;Ion Polarity,Ion_Polarity;Header&lt;/string&gt;
+  &lt;string&gt;Manual MSN,Manual_MSn;Footer&lt;/string&gt;
+  &lt;string&gt;MRM,MRM;Footer&lt;/string&gt;
+  &lt;string&gt;Auto MS/MS,Auto_MSMS;Footer&lt;/string&gt;
+  &lt;string&gt;Averages,Averages;Footer&lt;/string&gt;
+  &lt;string&gt;Start Polarity,Start_Polarity;Footer&lt;/string&gt;
+  &lt;string&gt;Stop Polarity,Stop_Polarity;Footer&lt;/string&gt;
+  &lt;string&gt;Ready Polarity,Ready_Polarity;Footer&lt;/string&gt;
+  &lt;string&gt;ICC Target,ICC_Target;Footer&lt;/string&gt;
+  &lt;string&gt;Multiplier Gain Target,Multiplier_Gain_Target;Footer&lt;/string&gt;
+  &lt;string&gt;Scan Begin,Scan_Begin;Footer&lt;/string&gt;
+  &lt;string&gt;Scan End,Scan_End;Footer&lt;/string&gt;
+  &lt;string&gt;Target Mass,Target_Mass;Footer&lt;/string&gt;
+  &lt;string&gt;Compound Stability,Compound_Stability;Footer&lt;/string&gt;
+  &lt;string&gt;Trap Drive Level,Trap_Drive_Level;Footer&lt;/string&gt;
+  &lt;string&gt;Trap Drive,Trap_Drive;Footer&lt;/string&gt;
+  &lt;string&gt;ICC Actual,ICC_Actual;Footer&lt;/string&gt;
+  &lt;string&gt;Count of Scans,Scan_count;Footer&lt;/string&gt;
+&lt;/ArrayOfString&gt;</Value>
+    </Setting>
+    <Setting Name="ReportTemplatePath" Type="System.String" Scope="Application">
+      <Value Profile="(Default)">C:\Users\den\source\repos\AnalyzeScan\AnalyzeScan\Templates\ReportTemplate.pdf</Value>
+    </Setting>
+    <Setting Name="ReportFields" Type="System.Collections.Specialized.StringCollection" Scope="User">
+      <Value Profile="(Default)">&lt;?xml version="1.0" encoding="utf-16"?&gt;
+&lt;ArrayOfString xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema"&gt;
+  &lt;string&gt;AnalysisDate&lt;/string&gt;
+  &lt;string&gt;AnalysisTime&lt;/string&gt;
+  &lt;string&gt;ReportDate&lt;/string&gt;
+  &lt;string&gt;ReportTime&lt;/string&gt;
+  &lt;string&gt;PatientId&lt;/string&gt;
+  &lt;string&gt;Tissue&lt;/string&gt;
+  &lt;string&gt;MedicalComments&lt;/string&gt;
+  &lt;string&gt;TechInfo&lt;/string&gt;
+&lt;/ArrayOfString&gt;</Value>
+    </Setting>
   </Settings>
 </SettingsFile>

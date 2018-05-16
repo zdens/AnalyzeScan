@@ -77,5 +77,65 @@ namespace AnalyzeScan.Properties {
                 return ResourceManager.GetString("Form1_CheckFormats_Enabled", resourceCulture);
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap if_connect_creating_32 {
+            get {
+                object obj = ResourceManager.GetObject("if_connect_creating_32", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap if_connect_creating_40 {
+            get {
+                object obj = ResourceManager.GetObject("if_connect_creating_40", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap if_connect_creating_5993 {
+            get {
+                object obj = ResourceManager.GetObject("if_connect_creating_5993", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap if_connect_creating_59931 {
+            get {
+                object obj = ResourceManager.GetObject("if_connect_creating_59931", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap if_connect_creating_64 {
+            get {
+                object obj = ResourceManager.GetObject("if_connect_creating_64", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Drawing.Bitmap.
+        /// </summary>
+        internal static System.Drawing.Bitmap if_Open_1493293 {
+            get {
+                object obj = ResourceManager.GetObject("if_Open_1493293", resourceCulture);
+                return ((System.Drawing.Bitmap)(obj));
+            }
+        }
     }
 }

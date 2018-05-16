@@ -1,0 +1,16 @@
+Package: analyzePeaks
+Type: Package
+Title: Makes predictions with MS data
+Version: 1.0
+Date: 2018-04-13
+Author: Anatoly Sorokin
+Maintainer: Anatoly Sorokin <lptolik@gmail.com>
+Description: More about what it does (maybe more than one line)
+Depends: R (>= 3.4.0)
+Imports: glmnet,MALDIquant,MALDIquantForeign
+Suggests: knitr, pander, ggplot2,ggrepel,FactoMineR,
+          cluster,dendextend,factoextra,corrplot,ncdf4,
+          PerformanceAnalytics,pvclust,sda,RColorBrewer,
+          Vennerable,crossval,testthat
+License: ?
+RoxygenNote: 6.0.1

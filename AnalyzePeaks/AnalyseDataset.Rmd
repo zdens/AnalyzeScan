@@ -1,0 +1,1761 @@
+---
+title: "Prepare SDA classifiers"
+author: "Anatoly Sorokin"
+date: '`r format(Sys.time(), "%d %B, %Y")`'
+output:
+  pdf_document:
+    keep_tex: yes
+    number_sections: yes
+  html_document: default
+header-includes:
+- \usepackage[T2A]{fontenc}
+- \usepackage[utf8]{inputenc}
+- \usepackage[english,russian]{babel}
+- \usepackage{grffile}
+- \usepackage{rotating}
+- \usepackage{caption}
+- \usepackage{longtable}
+- \usepackage{lscape}
+---
+```{r libraries, include=FALSE, cache=FALSE,echo=FALSE,message=FALSE}
+library(pander)
+library(knitr)
+library('Matrix')
+library(ggplot2)
+library(ggrepel)
+library(data.table)
+library(plyr)
+library(xtable)
+library(xcms)
+library("FactoMineR")
+library(cluster)
+library(dendextend)
+library(factoextra)
+library(corrplot)
+library(ncdf4)
+library("PerformanceAnalytics")
+library("pvclust")
+library("sda")
+library(RColorBrewer)
+library(MALDIquant)
+library(MALDIquantForeign)
+library(Vennerable)
+library("crossval")
+library(glmnet)
+ticThreshold<-0.01
+```
+```{r setup, include=FALSE, cache=FALSE}
+## This chunk should contain global configuration commands.
+## Use this to set knitr options and related things. Everything
+## in this chunk will be included in an appendix to document the
+## configuration used.
+#output <- opts_knit$get("rmarkdown.pandoc.to")
+
+## By default R code is only included in HTML versions of the report
+## (where it can be collapsed). You can generate a PDF version
+## using rmarkdown::pdf_document to get a copy for print. Extensive
+## chunks of R code may or may not be desired in /hat setting. If you
+## want them simply change the following arguments to `echo = TRUE`.
+## In either case the default can be overwritten for individual chunks.
+#opts_chunk$set(echo = output=="html")
+#opts_chunk$set(warning = output=="html")
+#opts_chunk$set(message = output=="html")
+
+## Cache options
+opts_chunk$set(cache=TRUE)
+
+## Figure options
+## Set default figure format
+#options(reportmd.figure.format=params$format)
+
+## Set 'hide.fig.code' to FALSE to include code chunks that
+## produce Figures in the output. Note that this affects all chunks
+## that provide a figure caption.
+opts_chunk$set(hold=TRUE, hide.fig.code=FALSE)
+
+## Set up default plotting options for different formats.
+## These can be overwritten for individual chunks
+#interactiveFig()
+#screenFig()
+#printFig()
+
+## Pander options
+panderOptions("digits", 3)
+panderOptions("table.split.table", 160)
+
+## Configure Figure and Table lables
+#options(figcap.prefix = "Figure", figcap.sep = ":", figcap.prefix.highlight = "**")
+#options(tabcap.prefix = "Table", tabcap.sep = ":", tabcap.prefix.highlight = "**")
+
+## Install required knitr hooks
+#installHooks()
+old.o <- options(warn = -1)
+```
+
+```{r functions, include=FALSE,cache=FALSE}
+data(isotopes)
+
+lasso.res<-list()
+lda.res<-list()
+dda.res<-list()
+print_table<-function(mat){
+  addtorow          <- list()
+  addtorow$pos      <- list()
+  addtorow$pos[[1]] <- c(0)
+  addtorow$command  <- c(
+    paste(
+      "\\hline \n",
+      "\\endhead \n",
+      "\\hline \n",
+      "\\multicolumn{3}{l}{\\footnotesize Continued on next page} \n",
+      "\\endfoot \n",
+      "\\endlastfoot \n",sep = ""
+    )
+  )
+  cat(
+    sprintf(
+      "\\begin{center}\n\\captionof{table}{Wide ranges of continious peaks (width>%d)}\n\\scriptsize",50
+    )
+  )
+  print(
+    xtable(
+      mat)
+    ,size = "small",include.colnames = TRUE,
+    tabular.environment = "longtable",
+    floating = FALSE,include.rownames = TRUE,
+    add.to.row = addtorow,
+    hline.after =c(-1)
+  )
+  cat("\\end{center}\n ")
+}
+roundScan<-function(i){
+  scan <- as.data.table(getScan(xraw, sel$scanidx[i], sel$mzrange))
+  sc1<-scan[,.(intensity=median(intensity)),by=.(mz=round(mz,0))]
+  m<-matrix(rep(0,2000),nrow = 1)
+  m[1,sc1[mz<=200]$mz]<-sc1[mz<=200]$intensity
+  return(m)
+}
+
+parseScan<-function(i){
+scan <- as.data.table(getScan(xraw, sel$scanidx[i], sel$mzrange))
+p<-data.frame(id=as.integer(-1),
+mz=scan$mz,
+mz1=round(scan$mz,0),
+mz100=round(scan$mz,2),
+rt=xraw@scantime[i],
+scan=i,
+intensity=scan$intensity,
+spectrid=as.integer(-1),
+reltic=-1e-6)
+tot<-sum(p$intensity)
+p$reltic<-p$intensity/tot
+return(p)
+}
+
+preparePeakList<-function(s,
+                          calibMethod="TIC",
+                          noiseMethod="SuperSmoother",
+                          tolerance = 2e-4,
+                          SNR=2, 
+                          halfWindowSize=5,
+                          metadata=list(),timeTrim=600){
+  if(mean(metaData(s)$retentionTime)<timeTrim){
+  s1 <- calibrateIntensity(s, method=calibMethod)
+  peaks1 <- detectPeaks(s1, SNR=SNR, halfWindowSize=halfWindowSize,method=noiseMethod)
+  md<-c(metaData(peaks1),metadata)
+  metaData(peaks1)<-md
+  return(peaks1)
+  }else{
+    return()
+  }
+}
+
+prepareLab<-function(df,num=20){
+  sel<-rep(TRUE,dim(df)[1])
+  mzLab<-c()
+  while(length(mzLab)<num){
+    i<-which.max(df$intensity[sel])
+    mzS<-df$mz[which(sel)[i]]
+    mzLab<-c(mzLab,mzS)
+    ind<-which(sel)
+    sel[ind[i]]<-FALSE
+    sel[which(abs(mzS-df$mz)<=2)]<-FALSE
+  }
+  return(match(mzLab,df$mz))
+}
+predfun.dda <- function(Xtrain, Ytrain, Xtest, Ytest,negative) {
+dda.fit <- sda(Xtrain, Ytrain, diagonal=TRUE, verbose=FALSE)
+dda.res[[length(dda.res)+1]]<<-dda.fit
+  ynew <- predict(dda.fit, Xtest, verbose=FALSE)$class
+return(confusionMatrix(Ytest, ynew, negative=negative)) }
+
+predfun.lda <- function(Xtrain, Ytrain, Xtest, Ytest,negative) {
+lda.fit <- sda(Xtrain, Ytrain, diagonal=FALSE, verbose=FALSE)
+lda.res[[length(lda.res)+1]]<<-lda.fit
+  ynew <- predict(lda.fit, Xtest, verbose=FALSE)$class
+return(confusionMatrix(Ytest, ynew, negative=negative)) }
+
+predfun.lasso <- function(Xtrain, Ytrain, Xtest, Ytest,negative,labels) {
+lasso.fit <- cv.glmnet(Xtrain, Ytrain, family='binomial', 
+                       alpha=1, parallel=TRUE, 
+                       standardize=TRUE, 
+                       type.measure='auc')
+lasso.res[[length(lasso.res)+1]]<<-lasso.fit
+lambda <- lasso.fit$lambda.min
+  ynew <- round(predict(lasso.fit, Xtest, 
+                        type = "response",
+                        s="lambda.min")+1,0)
+  if(length(unique(ynew))<length(labels)){
+  res<-factor(
+    ynew,
+    labels = labels[unique(ynew)])
+  }else{
+  res<-factor(
+    ynew,
+    labels = labels)
+  }
+return(confusionMatrix(Ytest, res, negative=negative)) }
+
+
+```
+
+# Load data
+
+
+```{r load.dataSet,cache=TRUE}
+metaData<-read.delim('files.txt',sep='\t')
+path<-'./no_centroid/'
+peaks<-list()
+for(i in 1:dim(metaData)[1]){
+  f<-metaData$Fname[i]
+  md=list(diag=metaData$Diag[i])
+  load(paste0(path,f))
+  p<-lapply(avgSpectra,preparePeakList,metadata=md,SNR=3)
+  idx<-which(!sapply(p,is.null))
+  if(length(idx)>0){
+    peaks<-c(peaks,p[idx])
+  }
+  rm(avgSpectra,featureMatrix10,featureMatrix2,featureMatrix5,spectra,xraw)
+  #cat(i,f,metaData$Diag[i],'\n')
+}
+```
+
+
+# Анализ сырых данных
+
+```{r raw.metadata.dataSet}
+diag<-sapply(peaks,function(.x)metaData(.x)$diag)
+fName<-sapply(peaks,function(.x)metaData(.x)$fName)
+#fLen<-sapply(peaks,function(.x)length(metaData(.x)$number))
+# fT2<-metaData$fRes
+# fT1<-sub('^(.).+','\\1',fT2)
+qplot(as.character(diag),log='y')
+pander(table(diag))
+pander(table(fName))
+ln<-sapply(peaks,length)
+qplot(ln,bins=100,log = 'x')
+#idx<-which(ln>quantile(ln,probs = 0.25))
+idx<-which(ln>quantile(ln,probs = 0.5))
+```
+
+```{r raw.align.peaks,cache=TRUE}
+wf<-determineWarpingFunctions(peaks[idx],
+                              method="lowess",
+                              plot=FALSE,
+                              reference = peaks[[which.max(ln)]])
+aPeaks<-warpMassPeaks(peaks[idx],wf)
+```
+
+```{r raw.bin.peaks,cache=TRUE}
+bPeaks <- binPeaks(aPeaks, tolerance=0.002)
+fpeaks <- filterPeaks(bPeaks,
+                      labels=diag[idx],
+                      minFrequency=0.25, mergeWhitelists=TRUE)
+fpeaks0 <- filterPeaks(bPeaks,
+                      labels=diag[idx],
+                      minFrequency=0.25, mergeWhitelists=FALSE)
+```
+
+```{r raw.featureMatrix}
+featureMatrix <- intensityMatrix(fpeaks)
+idNA<-which(is.na(featureMatrix),arr.ind =TRUE)
+featureMatrix[idNA]<-0
+```
+
+```
+{r raw.spectra,fig.width=8.5,fig.height=10.5,}
+mz<-as.double(colnames(featureMatrix))
+high<-apply(featureMatrix[fT2=='high',],2,median)
+low<-apply(featureMatrix[fT2=='low',],2,median)
+
+o<-par(mfrow=c(2,1))
+plot(mz,high,type='l')
+plot(mz,low,type='l')
+par(o)
+
+plot(mz,high,col='red',type='l',ylim=range(c(low,high)))
+lines(mz,low,col='blue')
+legend('topright',legend=c('high','low'),col=c('red','blue'),lwd=3)
+
+```
+```{r raw.spectra.facet,fig.width=8.5,fig.height=8.5,dev='png'}
+mz<-as.double(colnames(featureMatrix))
+df<-cbind(data.frame(diag=diag[idx]),as.data.frame(featureMatrix))
+pldf<-melt(df,id=c('diag'))
+pldf$mz<-round(as.numeric(as.character(pldf$variable)),4)
+
+# pldf<-data.frame(mz=c(mz,mz),
+#                  intensity=c(high,low),
+#                  type=c(rep('high',length(mz)),rep('low',length(mz))),
+#                  scint=c(high/max(high),low/max(low)))
+labIdx<-order(pldf$value,decreasing = TRUE)[1:10]
+ggplot(pldf)+geom_segment(aes(x=mz,xend=mz,y=0,yend=value,color=diag,alpha=0.5))+
+labs(title ='Combined plot')
+ggplot(pldf)+geom_segment(aes(x=mz,xend=mz,y=0,yend=value))+
+  facet_grid(diag~.)+ 
+  labs(title ='Intensity')
+```
+
+```{r raw.spectra.sc.facet,fig.width=8.5,fig.height=8.5,dev='png'}
+sfm<-t(scale(t(featureMatrix),scale = rowSums(featureMatrix)/1e6))
+sdf<-cbind(data.frame(diag=diag[idx]),as.data.frame(sfm))
+spldf<-melt(sdf,id=c('diag'))
+spldf$mz<-round(as.numeric(as.character(spldf$variable)),4)
+
+# pldf<-data.frame(mz=c(mz,mz),
+#                  intensity=c(high,low),
+#                  type=c(rep('high',length(mz)),rep('low',length(mz))),
+#                  scint=c(high/max(high),low/max(low)))
+labIdx<-order(spldf$value,decreasing = TRUE)[1:10]
+ggplot(spldf)+geom_segment(aes(x=mz,xend=mz,y=0,yend=value,color=diag,alpha=0.5))+
+labs(title ='Combined plot')
+ggplot(spldf)+geom_segment(aes(x=mz,xend=mz,y=0,yend=value))+
+  facet_grid(diag~.)+ 
+  labs(title ='Intensity')
+```
+
+
+```
+{r raw.pvclust,cache=TRUE}
+pv <- pvclust(t(featureMatrix),
+              method.hclust="ward.D2",
+              method.dist="euclidean")
+plot(pv, print.num=FALSE)
+```
+
+```{r raw.sda,fig.width=8.5,fig.height=10.5,results='asis'}
+ddar2 <- sda.ranking(Xtrain=featureMatrix, L=diag[idx],
+                     fdr=FALSE, diagonal=TRUE)
+plot(ddar2)
+
+```
+
+```{r raw.plot.sda,fig.width=8.5,fig.height=10.5}
+mddar2<-ddar2
+class(mddar2)<-'matrix'
+dfddar<-as.data.frame(mddar2)
+dfddar$mz<-as.double(rownames(dfddar))
+dfddar<-cbind(dfddar,data.frame(int=colSums(featureMatrix)[dfddar$idx]))
+dfddar$scoreR<-rank(dfddar$score)
+dfddar$intR<-rank(dfddar$int)
+qplot(score,int,data=dfddar,colour=intR)
+
+```
+```{r save.raw.sda}
+mddarTot<-mddar2
+dfddarTot<-dfddar
+save(mddarTot,dfddarTot,file = 'sdaTot.Rdata')
+```
+
+```
+{r raw.cluster,fig.width=8.5,fig.height=8.5}
+fm<-featureMatrix
+rownames(fm)<-
+cv<-cor(t(fm))
+corrplot(cv,main='CorrMatrix SNR=2, fr=0.25 FR', method="color",tl.pos='b',tl.cex=0.5,order ='hclust')
+cs<-lsa::cosine(t(fm))
+corrplot(cs,main='CorrMatrix SNR=2, fr=0.25 FR', method="color",tl.pos='b',tl.cex=0.5,order ='hclust')
+```
+
+```{r raw.pca.nosc,fig.width=8.5,fig.height=8.5}
+pca<-prcomp(featureMatrix,scale. = FALSE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx],
+addEllipses=TRUE, ellipse.level=0.95)
+```
+
+
+```{r raw.pca.sc,fig.width=8.5,fig.height=8.5}
+pca<-prcomp(featureMatrix,scale. = TRUE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx],
+addEllipses=TRUE, ellipse.level=0.95)
+```
+
+```
+{r raw.venn,fig.width=8.5,fig.height=8.5}
+v<-Venn(list(high=mz[high>1e-3],low=mz[low>1e-3]))
+plot(v)
+vIdx<-match(v@IntersectionSets$`11`,mz)
+qplot(high[vIdx]/max(high),low[vIdx]/max(low))+
+  geom_abline(slope = 1,intercept = 0)+
+  xlab('high')+ylab('low')
+vIdxEx<-match(v@IntersectionSets$`10`,mz)
+qplot(high[vIdxEx]/max(high))+xlab('high only')
+vIdxN<-match(v@IntersectionSets$`01`,mz)
+qplot(low[vIdxN]/max(low))+xlab('low only')
+
+
+```
+
+# Five diagnoses
+```{r five.align.peaks,cache=TRUE}
+i.five<-which(diag[idx]%in% c(35,2,5,8,9,14))
+idx.five<-idx[i.five]
+wf<-determineWarpingFunctions(peaks[idx.five],
+                              method="lowess",
+                              plot=FALSE,
+                              reference = peaks[[which.max(ln)]])
+aPeaks<-warpMassPeaks(peaks[idx.five],wf)
+```
+
+```{r five.bin.peaks,cache=TRUE}
+bPeaks <- binPeaks(aPeaks, tolerance=0.002)
+fpeaks <- filterPeaks(bPeaks,
+                      labels=diag[idx.five],
+                      minFrequency=0.25, mergeWhitelists=TRUE)
+fpeaks0 <- filterPeaks(bPeaks,
+                      labels=diag[idx.five],
+                      minFrequency=0.25, mergeWhitelists=FALSE)
+```
+
+```{r five.featureMatrix}
+featureMatrix.five <- intensityMatrix(fpeaks)
+idNA<-which(is.na(featureMatrix.five),arr.ind =TRUE)
+featureMatrix.five[idNA]<-0
+```
+
+```{r five.spectra.facet,fig.width=8.5,fig.height=8.5,dev='png'}
+mz<-as.double(colnames(featureMatrix.five))
+df<-cbind(data.frame(diag=diag[idx.five]),as.data.frame(featureMatrix.five))
+pldf<-melt(df,id=c('diag'))
+pldf$mz<-round(as.numeric(as.character(pldf$variable)),4)
+
+# pldf<-data.frame(mz=c(mz,mz),
+#                  intensity=c(high,low),
+#                  type=c(rep('high',length(mz)),rep('low',length(mz))),
+#                  scint=c(high/max(high),low/max(low)))
+labIdx<-order(pldf$value,decreasing = TRUE)[1:10]
+ggplot(pldf)+geom_segment(aes(x=mz,xend=mz,y=0,yend=value,color=diag,alpha=0.5))+
+labs(title ='Combined plot')
+ggplot(pldf)+geom_segment(aes(x=mz,xend=mz,y=0,yend=value))+
+  facet_grid(diag~.)+ 
+  labs(title ='Intensity')
+```
+
+```{r five.spectra.sc.facet,fig.width=8.5,fig.height=8.5,dev='png'}
+sfm<-t(scale(t(featureMatrix.five),scale = rowSums(featureMatrix.five)/1e6))
+sdf<-cbind(data.frame(diag=diag[idx.five]),as.data.frame(sfm))
+spldf<-melt(sdf,id=c('diag'))
+spldf$mz<-round(as.numeric(as.character(spldf$variable)),4)
+
+# pldf<-data.frame(mz=c(mz,mz),
+#                  intensity=c(high,low),
+#                  type=c(rep('high',length(mz)),rep('low',length(mz))),
+#                  scint=c(high/max(high),low/max(low)))
+labIdx<-order(spldf$value,decreasing = TRUE)[1:10]
+ggplot(spldf)+geom_segment(aes(x=mz,xend=mz,y=0,yend=value,color=diag,alpha=0.5))+
+labs(title ='Combined plot')
+ggplot(spldf)+geom_segment(aes(x=mz,xend=mz,y=0,yend=value))+
+  facet_grid(diag~.)+ 
+  labs(title ='Intensity')
+```
+
+
+```{r five.sda,fig.width=8.5,fig.height=10.5,results='asis'}
+ddar2 <- sda.ranking(Xtrain=featureMatrix.five, L=diag[idx.five],
+                     fdr=FALSE, diagonal=TRUE)
+plot(ddar2)
+
+```
+
+```{r five.plot.sda,fig.width=8.5,fig.height=10.5}
+mddar2<-ddar2
+class(mddar2)<-'matrix'
+dfddar<-as.data.frame(mddar2)
+dfddar$mz<-as.double(rownames(dfddar))
+dfddar<-cbind(dfddar,data.frame(int=colSums(featureMatrix)[dfddar$idx]))
+dfddar$scoreR<-rank(dfddar$score)
+dfddar$intR<-rank(dfddar$int)
+qplot(score,int,data=dfddar,colour=intR)
+
+```
+```{r save.five.sda}
+mddarFive<-mddar2
+dfddarFive<-dfddar
+save(mddarFive,dfddarFive,file = 'sda.five.Rdata')
+```
+
+
+
+# Diag 2
+
+```{r fm2}
+idx2<-which(diag[idx]%in% c(35,2))
+```
+
+```{r raw.sda.2,fig.width=8.5,fig.height=10.5,results='asis'}
+ddar2 <- sda.ranking(Xtrain=featureMatrix[idx2,], L=diag[idx[idx2]],
+                     fdr=FALSE, diagonal=TRUE)
+plot(ddar2)
+
+```
+
+```{r raw.plot.sda.2,fig.width=8.5,fig.height=10.5}
+mddar2<-ddar2
+class(mddar2)<-'matrix'
+dfddar<-as.data.frame(mddar2)
+dfddar$mz<-as.double(rownames(dfddar))
+dfddar<-cbind(dfddar,data.frame(int=colSums(featureMatrix)[dfddar$idx]))
+dfddar$scoreR<-rank(dfddar$score)
+dfddar$intR<-rank(dfddar$int)
+qplot(score,int,data=dfddar,colour=intR)
+pander(dfddar[1:20,])
+```
+
+```{r save.2.sda}
+mddar.2<-mddar2
+dfddar.2<-dfddar
+save(mddar.2,dfddar.2,file = 'sda.2.Rdata')
+```
+
+```{r class.sda.2.full}
+# set seed to get reproducible results
+#set.seed(1234)
+lasso.res<-list()
+lda.res<-list()
+dda.res<-list()
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx2,],
+                   Y=as.character(diag[idx[idx2]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+dda.res.2.full<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx2,])
+```
+
+```{r class.sda.2.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar2[1:20, "idx"]
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx2,top],
+                   Y=as.character(diag[idx[idx2]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+dda.res.2.top20<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx2,])
+```
+
+```{r class.sda.2.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar2[1:10, "idx"]
+pander(dfddar[1:10,])
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx2,top],
+                   Y=as.character(diag[idx[idx2]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+dda.res.2.top10<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx2,top])
+```
+
+```{r class.lda.2.full}
+# set seed to get reproducible results
+#set.seed(1234)
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx2,],
+                   Y=as.character(diag[idx[idx2]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lda.res.2.full<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx2,])
+```
+
+```{r class.lda.2.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar2[1:20, "idx"]
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx2,top],
+                   Y=as.character(diag[idx[idx2]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lda.res.2.top20<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx2,top])
+```
+
+```{r class.lda.2.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar2[1:10, "idx"]
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx2,top],
+                   Y=as.character(diag[idx[idx2]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lda.res.2.top10<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx2,top])
+```
+
+```{r class.lasso.2.full}
+# set seed to get reproducible results
+#set.seed(1234)
+Y<-factor(as.character(diag[idx[idx2]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx2,],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.2.full<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx2,])
+```
+
+```{r class.lasso.2.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar2[1:20, "idx"]
+Y<-factor(as.character(diag[idx[idx2]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx2,top],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.2.top20<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx2,top])
+```
+
+```{r class.lasso.2.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar2[1:10, "idx"]
+Y=factor(as.character(diag[idx[idx2]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx2,top],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.2.top10<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx2,top])
+```
+
+
+```{r raw.pca.nosc.2,fig.width=8.5,fig.height=8.5}
+pca<-prcomp(featureMatrix[idx2,],scale. = FALSE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+             addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx[idx2]],
+             addEllipses=TRUE, ellipse.level=0.95)
+```
+
+
+```{r raw.pca.sc.2,fig.width=8.5,fig.height=8.5}
+cidx<-which(apply(featureMatrix[idx2,],2,sd)>0)
+pca<-prcomp(featureMatrix[idx2,cidx],scale. = TRUE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+             addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx[idx2]],
+             addEllipses=TRUE, ellipse.level=0.95)
+```
+
+```{r raw.cluster.2O.data,cache=TRUE}
+fm<-featureMatrix[diag[idx]==2,]
+cv<-cor(t(fm))
+cs<-lsa::cosine(t(fm))
+```
+
+
+```{r raw.cluster.2O,fig.width=8.5,fig.height=8.5,dev='png',cache=FALSE}
+corrplot(cv,main='CorrMatrix Diag 2 only', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+corrplot(cs,main='CosMatrix Diag 2 only', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+```
+
+```{r raw.cluster.2.data,cache=TRUE}
+fm<-featureMatrix[idx2,]
+cv<-cor(t(fm))
+cs<-lsa::cosine(t(fm))
+```
+
+```{r raw.cluster.2,fig.width=8.5,fig.height=8.5,dev='png',cache=FALSE}
+corrplot(cv,main='CorrMatrix Diag 2/35', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+corrplot(cs,main='CosMatrix Diag 2/35', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+```
+
+```{r save.2.models}
+save(dda.res.2.full,dda.res.2.top20,dda.res.2.top10,
+     lda.res.2.full,lda.res.2.top20,lda.res.2.top10,
+     lasso.res.2.full,lasso.res.2.top20,lasso.res.2.top10,
+     file = 'models.2.RData')
+```
+
+# Diag 5
+```{r fm5}
+idx5<-which(diag[idx]%in% c(35,5))
+```
+
+```{r raw.sda.5,fig.width=8.5,fig.height=10.5,results='asis',cache=FALSE}
+ddar5 <- sda.ranking(Xtrain=featureMatrix[idx5,], L=diag[idx[idx5]],
+                     fdr=FALSE, diagonal=TRUE)
+plot(ddar5)
+
+```
+
+```{r raw.plot.sda.5,fig.width=8.5,fig.height=10.5,cache=FALSE}
+mddar5<-ddar5
+class(mddar5)<-'matrix'
+dfddar<-as.data.frame(mddar5)
+dfddar$mz<-as.double(rownames(dfddar))
+dfddar<-cbind(dfddar,data.frame(int=colSums(featureMatrix)[dfddar$idx]))
+dfddar$scoreR<-rank(dfddar$score)
+dfddar$intR<-rank(dfddar$int)
+qplot(score,int,data=dfddar,colour=intR)
+pander(dfddar[1:20,])
+```
+```{r save.5.sda}
+mddar.5<-mddar5
+dfddar.5<-dfddar
+save(mddar.5,dfddar.5,file = 'sda.5.Rdata')
+```
+
+
+```{r class.sda.5.full}
+# set seed to get reproducible results
+#set.seed(1234)
+lasso.res<-list()
+lda.res<-list()
+dda.res<-list()
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx5,],
+                   Y=as.character(diag[idx[idx5]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+dda.res.5.full<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx5,])
+```
+
+```{r class.sda.5.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar5[1:20, "idx"]
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx5,top],
+                   Y=as.character(diag[idx[idx5]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+dda.res.5.top20<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx5,top])
+```
+
+```{r class.sda.5.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar5[1:10, "idx"]
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx5,top],
+                   Y=as.character(diag[idx[idx5]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+dda.res.5.top10<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx5,top])
+```
+
+```{r class.lda.5.full}
+# set seed to get reproducible results
+#set.seed(1234)
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx5,],
+                   Y=as.character(diag[idx[idx5]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lda.res.5.full<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx5,])
+```
+
+```{r class.lda.5.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar5[1:20, "idx"]
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx5,top],
+                   Y=as.character(diag[idx[idx5]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lda.res.5.top20<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx5,top])
+```
+
+```{r class.lda.5.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar5[1:10, "idx"]
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx5,top],
+                   Y=as.character(diag[idx[idx5]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lda.res.5.top10<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx5,top])
+```
+
+```{r class.lasso.5.full}
+# set seed to get reproducible results
+#set.seed(1234)
+Y=factor(as.character(diag[idx[idx5]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx5,],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.5.full<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx5,])
+```
+
+```{r class.lasso.5.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar5[1:20, "idx"]
+Y=factor(as.character(diag[idx[idx5]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx5,top],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.5.top20<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx5,top])
+```
+
+```{r class.lasso.5.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar5[1:10, "idx"]
+Y=factor(as.character(diag[idx[idx5]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx5,top],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.5.top10<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx5,top])
+```
+
+
+```{r raw.pca.nosc.5,fig.width=8.5,fig.height=8.5,cache=FALSE}
+pca<-prcomp(featureMatrix[idx5,],scale. = FALSE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx[idx5]],
+addEllipses=TRUE, ellipse.level=0.95)
+```
+
+
+```{r raw.pca.sc.5,fig.width=8.5,fig.height=8.5,cache=FALSE}
+cidx<-which(apply(featureMatrix[idx5,],2,sd)>0)
+pca<-prcomp(featureMatrix[idx5,cidx],scale. = TRUE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx[idx5]],
+addEllipses=TRUE, ellipse.level=0.95)
+```
+
+```{r raw.cluster.5O.data,cache=TRUE}
+fm<-featureMatrix[diag[idx]==5,]
+cv<-cor(t(fm))
+cs<-lsa::cosine(t(fm))
+```
+
+```{r raw.cluster.5O,fig.width=8.5,fig.height=8.5,dev='png',cache=FALSE}
+corrplot(cv,main='CorrMatrix Diag 5 only', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+corrplot(cs,main='CosMatrix Diag 5 only', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+```
+
+
+```{r raw.cluster.5.data,cache=TRUE}
+fm<-featureMatrix[idx5,]
+cv<-cor(t(fm))
+cs<-lsa::cosine(t(fm))
+```
+
+```{r raw.cluster.5,fig.width=8.5,fig.height=8.5,dev='png',dev='png',cache=FALSE}
+corrplot(cv,main='CorrMatrix Diag 5/35', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+corrplot(cs,main='CosMatrix Diag 5/35', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+```
+```{r save.5.models}
+save(dda.res.5.full,dda.res.5.top20,dda.res.5.top10,
+     lda.res.5.full,lda.res.5.top20,lda.res.5.top10,
+     lasso.res.5.full,lasso.res.5.top20,lasso.res.5.top10,
+     file = 'models.5.RData')
+```
+
+
+
+# Diag 9
+```{r fm9}
+idx9<-which(diag[idx]%in% c(35,9))
+```
+
+```{r raw.sda.9,fig.width=8.5,fig.height=10.5,results='asis'}
+ddar9 <- sda.ranking(Xtrain=featureMatrix[idx9,], L=diag[idx[idx9]],
+                     fdr=FALSE, diagonal=TRUE)
+plot(ddar9)
+
+```
+
+```{r raw.plot.sda.9,fig.width=8.5,fig.height=10.5,cache=FALSE}
+mddar9<-ddar9
+class(mddar9)<-'matrix'
+dfddar<-as.data.frame(mddar9)
+dfddar$mz<-as.double(rownames(dfddar))
+dfddar<-cbind(dfddar,data.frame(int=colSums(featureMatrix)[dfddar$idx]))
+dfddar$scoreR<-rank(dfddar$score)
+dfddar$intR<-rank(dfddar$int)
+qplot(score,int,data=dfddar,colour=intR)
+pander(dfddar[1:20,])
+```
+
+```{r save.9.sda}
+mddar.9<-mddar9
+dfddar.9<-dfddar
+save(mddar.9,dfddar.9,file = 'sda.9.Rdata')
+```
+
+```{r class.sda.9.full}
+# set seed to get reproducible results
+#set.seed(1234)
+lasso.res<-list()
+lda.res<-list()
+dda.res<-list()
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx9,],
+                   Y=as.character(diag[idx[idx9]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+dda.res.9.full<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx9,])
+```
+
+```{r class.sda.9.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar9[1:20, "idx"]
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx9,top],
+                   Y=as.character(diag[idx[idx9]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+dda.res.9.top20<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx9,top])
+```
+
+```{r class.sda.9.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar9[1:10, "idx"]
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx9,top],
+                   Y=as.character(diag[idx[idx9]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+dda.res.9.top10<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx9,top])
+```
+
+
+```{r class.lda.9.full}
+# set seed to get reproducible results
+#set.seed(1234)
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx9,],
+                   Y=as.character(diag[idx[idx9]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lda.res.9.full<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx9,])
+```
+
+```{r class.lda.9.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar9[1:20, "idx"]
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx9,top],
+                   Y=as.character(diag[idx[idx9]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lda.res.9.top20<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx9,top])
+```
+
+```{r class.lda.9.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar9[1:10, "idx"]
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx9,top],
+                   Y=as.character(diag[idx[idx9]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lda.res.9.top10<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx9,top])
+```
+
+
+```{r class.lasso.9.full}
+# set seed to get reproducible results
+#set.seed(1234)
+Y=factor(as.character(diag[idx[idx9]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx9,],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.9.full<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx9,])
+```
+
+```{r class.lasso.9.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar9[1:20, "idx"]
+Y=factor(as.character(diag[idx[idx9]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx9,top],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.9.top20<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx9,top])
+```
+
+```{r class.lasso.9.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar9[1:10, "idx"]
+Y=factor(as.character(diag[idx[idx9]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx9,top],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+cv.out$stat
+cv.out$stat.se
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.9.top10<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx9,top])
+```
+
+
+```{r raw.pca.nosc.9,fig.width=8.5,fig.height=8.5,cache=FALSE}
+pca<-prcomp(featureMatrix[idx9,],scale. = FALSE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx[idx9]],
+addEllipses=TRUE, ellipse.level=0.95)
+```
+
+
+```{r raw.pca.sc.9,fig.width=8.5,fig.height=8.5,cache=FALSE}
+cidx<-which(apply(featureMatrix[idx9,],2,sd)>0)
+pca<-prcomp(featureMatrix[idx9,cidx],scale. = TRUE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx[idx9]],
+addEllipses=TRUE, ellipse.level=0.95)
+```
+
+```{r raw.cluster.9O.data,cache=TRUE}
+fm<-featureMatrix[diag[idx]==9,]
+cv<-cor(t(fm))
+cs<-lsa::cosine(t(fm))
+```
+
+```{r raw.cluster.9O,fig.width=8.5,fig.height=8.5,dev='png'}
+corrplot(cv,main='CorrMatrix Diag 9 only', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+corrplot(cs,main='CosMatrix Diag 9 only', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+```
+
+
+```{r raw.cluster.9.data,cache=TRUE}
+fm<-featureMatrix[idx9,]
+cv<-cor(t(fm))
+cs<-lsa::cosine(t(fm))
+```
+
+```{r raw.cluster.9,fig.width=8.5,fig.height=8.5,dev='png'}
+corrplot(cv,main='CorrMatrix Diag 9/35', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+corrplot(cs,main='CosMatrix Diag 9/35', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+```
+
+```{r save.9.models}
+save(dda.res.9.full,dda.res.9.top20,dda.res.9.top10,
+     lda.res.9.full,lda.res.9.top20,lda.res.9.top10,
+     lasso.res.9.full,lasso.res.9.top20,lasso.res.9.top10,
+     file = 'models.9.RData')
+```
+
+
+
+# Diag 8
+```{r fm8}
+idx8<-which(diag[idx]%in% c(35,8))
+```
+
+```{r raw.sda.8,fig.width=8.5,fig.height=10.5,results='asis'}
+ddar8 <- sda.ranking(Xtrain=featureMatrix[idx8,], L=diag[idx[idx8]],
+                     fdr=FALSE, diagonal=TRUE)
+plot(ddar8)
+
+```
+
+```{r raw.plot.sda.8,fig.width=8.5,fig.height=10.5}
+mddar8<-ddar8
+class(mddar8)<-'matrix'
+dfddar<-as.data.frame(mddar8)
+dfddar$mz<-as.double(rownames(dfddar))
+dfddar<-cbind(dfddar,data.frame(int=colSums(featureMatrix)[dfddar$idx]))
+dfddar$scoreR<-rank(dfddar$score)
+dfddar$intR<-rank(dfddar$int)
+qplot(score,int,data=dfddar,colour=intR)
+pander(dfddar[1:20,])
+```
+
+```{r save.8.sda}
+mddar.8<-mddar8
+dfddar.8<-dfddar
+save(mddar.8,dfddar.8,file = 'sda.8.Rdata')
+```
+
+```{r class.sda.8.full}
+# set seed to get reproducible results
+#set.seed(1234)
+lasso.res<-list()
+lda.res<-list()
+dda.res<-list()
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx8,],
+                   Y=as.character(diag[idx[idx8]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+dda.res.8.full<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx8,])
+```
+
+```{r class.sda.8.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar8[1:20, "idx"]
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx8,top],
+                   Y=as.character(diag[idx[idx8]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+dda.res.8.top20<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx8,top])
+```
+
+```{r class.sda.8.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar8[1:10, "idx"]
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx8,top],
+                   Y=as.character(diag[idx[idx8]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+dda.res.8.top10<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx8,top])
+```
+
+
+```{r class.lda.8.full}
+# set seed to get reproducible results
+#set.seed(1234)
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx8,],
+                   Y=as.character(diag[idx[idx8]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lda.res.8.full<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx8,])
+```
+
+```{r class.lda.8.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar8[1:20, "idx"]
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx8,top],
+                   Y=as.character(diag[idx[idx8]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lda.res.8.top20<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx8,top])
+```
+
+```{r class.lda.8.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar8[1:10, "idx"]
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx8,top],
+                   Y=as.character(diag[idx[idx8]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lda.res.8.top10<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx8,top])
+```
+
+
+```{r class.lasso.8.full}
+# set seed to get reproducible results
+#set.seed(1234)
+Y=factor(as.character(diag[idx[idx8]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx8,],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.8.full<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx8,top])
+```
+
+```{r class.lasso.8.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar8[1:20, "idx"]
+Y=factor(as.character(diag[idx[idx8]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx8,top],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                    verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.8.top20<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx8,top])
+```
+
+```{r class.lasso.8.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar8[1:10, "idx"]
+Y=factor(as.character(diag[idx[idx8]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx8,top],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.8.top10<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx8,top])
+```
+
+
+
+```{r raw.pca.nosc.8,fig.width=8.5,fig.height=8.5}
+pca<-prcomp(featureMatrix[idx8,],scale. = FALSE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx[idx8]],
+addEllipses=TRUE, ellipse.level=0.95)
+```
+
+
+```{r raw.pca.sc.8,fig.width=8.5,fig.height=8.5}
+cidx<-which(apply(featureMatrix[idx8,],2,sd)>0)
+pca<-prcomp(featureMatrix[idx8,cidx],scale. = TRUE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx[idx8]],
+addEllipses=TRUE, ellipse.level=0.95)
+```
+
+```{r raw.cluster.8O.data,cache=TRUE}
+fm<-featureMatrix[diag[idx]==8,]
+cv<-cor(t(fm))
+cs<-lsa::cosine(t(fm))
+```
+
+```{r raw.cluster.8O,fig.width=8.5,fig.height=8.5,dev='png'}
+fm<-featureMatrix[diag[idx]==8,]
+cv<-cor(t(fm))
+corrplot(cv,main='CorrMatrix Diag 8 only', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+cs<-lsa::cosine(t(fm))
+corrplot(cs,main='CosMatrix Diag 8 only', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+```
+
+
+```{r raw.cluster.8.data,cache=TRUE}
+fm<-featureMatrix[idx8,]
+cv<-cor(t(fm))
+cs<-lsa::cosine(t(fm))
+```
+
+```{r raw.cluster.8,fig.width=8.5,fig.height=8.5,dev='png'}
+corrplot(cv,main='CorrMatrix Diag 8/35', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+corrplot(cs,main='CosMatrix Diag 8/35', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+```
+
+
+
+```{r save.8.models}
+save(dda.res.8.full,dda.res.8.top20,dda.res.8.top10,
+     lda.res.8.full,lda.res.8.top20,lda.res.8.top10,
+     lasso.res.8.full,lasso.res.8.top20,lasso.res.8.top10,
+     file = 'models.8.RData')
+```
+
+
+
+# Diag 14
+```{r fm14}
+idx14<-which(diag[idx]%in% c(35,14))
+```
+
+```{r raw.sda.14,fig.width=8.5,fig.height=10.5,results='asis'}
+ddar14 <- sda.ranking(Xtrain=featureMatrix[idx14,], L=diag[idx[idx14]],
+                     fdr=FALSE, diagonal=TRUE)
+plot(ddar14)
+
+```
+
+```{r raw.plot.sda.14,fig.width=8.5,fig.height=10.5}
+mddar14<-ddar14
+class(mddar14)<-'matrix'
+dfddar<-as.data.frame(mddar14)
+dfddar$mz<-as.double(rownames(dfddar))
+dfddar<-cbind(dfddar,data.frame(int=colSums(featureMatrix)[dfddar$idx]))
+dfddar$scoreR<-rank(dfddar$score)
+dfddar$intR<-rank(dfddar$int)
+qplot(score,int,data=dfddar,colour=intR)
+pander(dfddar[1:20,])
+
+```
+
+```{r save.14.sda}
+mddar.14<-mddar14
+dfddar.14<-dfddar
+save(mddar.14,dfddar.14,file = 'sda.14.Rdata')
+```
+
+```{r class.sda.14.full}
+# set seed to get reproducible results
+#set.seed(1234)
+lasso.res<-list()
+lda.res<-list()
+dda.res<-list()
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx14,],
+                   Y=as.character(diag[idx[idx14]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+dda.res.14.full<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx14,])
+```
+
+```{r class.sda.14.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar14[1:20, "idx"]
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx14,top],
+                   Y=as.character(diag[idx[idx14]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+dda.res.14.top20<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx14,top])
+```
+
+```{r class.sda.14.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar14[1:10, "idx"]
+cv.out <- crossval(predfun.dda,
+                   X=featureMatrix[idx14,top],
+                   Y=as.character(diag[idx[idx14]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+dda.res.14.top10<-dda.res
+dda.res<-list()
+dim(featureMatrix[idx14,top])
+```
+
+
+```{r class.lda.14.full}
+# set seed to get reproducible results
+#set.seed(1234)
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx14,],
+                   Y=as.character(diag[idx[idx14]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lda.res.14.full<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx14,])
+```
+
+```{r class.lda.14.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar14[1:20, "idx"]
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx14,top],
+                   Y=as.character(diag[idx[idx14]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lda.res.14.top20<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx14,top])
+```
+
+```{r class.lda.14.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar14[1:10, "idx"]
+cv.out <- crossval(predfun.lda,
+                   X=featureMatrix[idx14,top],
+                   Y=as.character(diag[idx[idx14]]),
+                   K=10, B=20,
+                   negative="35",
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lda.res.14.top10<-lda.res
+lda.res<-list()
+dim(featureMatrix[idx14,top])
+```
+
+
+```{r class.lasso.14.full}
+# set seed to get reproducible results
+#set.seed(1234)
+Y=factor(as.character(diag[idx[idx14]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx14,],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.14.full<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx14,])
+```
+
+```{r class.lasso.14.top20}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar14[1:20, "idx"]
+Y=factor(as.character(diag[idx[idx14]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx14,top],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                    verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.14.top20<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx14,top])
+```
+
+```{r class.lasso.14.top10}
+# set seed to get reproducible results
+#set.seed(1234)
+top <- ddar14[1:10, "idx"]
+Y=factor(as.character(diag[idx[idx14]]))
+cv.out <- crossval(predfun.lasso,
+                   X=featureMatrix[idx14,top],
+                   Y=Y,
+                   K=10, B=20,
+                   negative="35",
+                   labels=levels(Y),
+                   verbose=FALSE)
+pander(diagnosticErrors(cv.out$stat))
+lasso.res.14.top10<-lasso.res
+lasso.res<-list()
+dim(featureMatrix[idx14,top])
+```
+
+
+
+```{r raw.pca.nosc.14,fig.width=8.5,fig.height=8.5}
+pca<-prcomp(featureMatrix[idx14,],scale. = FALSE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx[idx14]],
+addEllipses=TRUE, ellipse.level=0.95)
+```
+
+
+```{r raw.pca.sc.14,fig.width=8.5,fig.height=8.5}
+cidx<-which(apply(featureMatrix[idx14,],2,sd)>0)
+pca<-prcomp(featureMatrix[idx14,cidx],scale. = TRUE)
+fviz_screeplot(pca, ncp=15)
+fviz_pca_ind(pca, habillage='none',label = 'none',
+addEllipses=FALSE)
+fviz_pca_ind(pca, habillage=diag[idx[idx14]],
+addEllipses=TRUE, ellipse.level=0.95)
+```
+
+```{r raw.cluster.14O.data,cache=TRUE}
+fm<-featureMatrix[diag[idx]==14,]
+cv<-cor(t(fm))
+cs<-lsa::cosine(t(fm))
+```
+
+```{r raw.cluster.14O,fig.width=8.5,fig.height=8.5,dev='png'}
+fm<-featureMatrix[diag[idx]==14,]
+cv<-cor(t(fm))
+corrplot(cv,main='CorrMatrix Diag 14 only', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+cs<-lsa::cosine(t(fm))
+corrplot(cs,main='CosMatrix Diag 14 only', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+```
+
+
+```{r raw.cluster.14.data,cache=TRUE}
+fm<-featureMatrix[idx14,]
+cv<-cor(t(fm))
+cs<-lsa::cosine(t(fm))
+```
+
+```{r raw.cluster.14,fig.width=8.5,fig.height=8.5,dev='png'}
+corrplot(cv,main='CorrMatrix Diag 14/35', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+corrplot(cs,main='CosMatrix Diag 14/35', method="color",tl.pos='n',tl.cex=0.5,order ='hclust')
+```
+
+
+```{r save.14.models}
+save(dda.res.14.full,dda.res.14.top20,dda.res.14.top10,
+     lda.res.14.full,lda.res.14.top20,lda.res.14.top10,
+     lasso.res.14.full,lasso.res.14.top20,lasso.res.14.top10,
+     file = 'models.14.RData')
+```
+
+
+
+# Приложения {.tabset}
+## Библиотеки
+```{r libraries, eval=FALSE, include=TRUE}
+```
+
+
+## Функции
+```{r functions, eval=FALSE, include=TRUE}
+```
+
+
+## Конфигурация R
+```{r setup, eval=FALSE}
+```
+
+
+### Session Info
+```{r sessionInfo, echo=FALSE, results='asis', class='text', warning=FALSE}
+pander(devtools::session_info())
+options(old.o)
+```

@@ -1,0 +1,140 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProjectGuid>{C29AB603-293A-4406-A4C4-9F20C19E9F52}</ProjectGuid>
+    <OutputType>Library</OutputType>
+    <AppDesignerFolder>Properties</AppDesignerFolder>
+    <RootNamespace>LIMPFileReader</RootNamespace>
+    <AssemblyName>LIMPFileReader</AssemblyName>
+    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
+    <FileAlignment>512</FileAlignment>
+    <TargetFrameworkProfile />
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <DebugType>full</DebugType>
+    <Optimize>false</Optimize>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>DEBUG;TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <PlatformTarget>x86</PlatformTarget>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType>pdbonly</DebugType>
+    <Optimize>true</Optimize>
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE</DefineConstants>
+    <ErrorReport>prompt</ErrorReport>
+    <WarningLevel>4</WarningLevel>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
+    <Reference Include="Microsoft.Research.Science.Data, Version=1.2.6754.0, Culture=neutral, PublicKeyToken=e550de0161496f12, processorArchitecture=x86">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>libs\Microsoft.Research.Science.Data.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Research.Science.Data.Imperative">
+      <HintPath>..\..\ScientificDataSet\sln\CodePlexInstaller\Release\bin\Microsoft.Research.Science.Data.Imperative.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Research.Science.Data.NetCDF4, Version=1.2.6754.0, Culture=neutral, PublicKeyToken=e550de0161496f12, processorArchitecture=x86">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>libs\Microsoft.Research.Science.Data.NetCDF4.dll</HintPath>
+    </Reference>
+    <Reference Include="NLog">
+      <HintPath>..\packages\NLog.4.4.13\lib\net45\NLog.dll</HintPath>
+    </Reference>
+    <Reference Include="System" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Xml.Linq" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Formats\Bruker\ParametersComparer.cs" />
+    <Compile Include="Formats\Mzxml\processingOperation.cs" />
+    <Compile Include="Helpers\AdditionalReportData.cs" />
+    <Compile Include="CoreAssembly.cs" />
+    <Compile Include="Formats\Bruker\enums.cs" />
+    <Compile Include="Formats\Mzxml\DataPointIntensityComparison.cs" />
+    <Compile Include="Formats\Bruker\MsXCompass.cs" />
+    <Compile Include="Formats\CDFormat\Cdf.cs" />
+    <Compile Include="Formats\Mzxml\%40operator.cs" />
+    <Compile Include="Formats\Mzxml\DataPoint.cs" />
+    <Compile Include="Formats\Mzxml\DataPointMzComparison.cs" />
+    <Compile Include="Formats\Mzxml\enums.cs" />
+    <Compile Include="Formats\Mzxml\MsDetector.cs" />
+    <Compile Include="Formats\Mzxml\msRun.cs" />
+    <Compile Include="Formats\Mzxml\msRunDataProcessing.cs" />
+    <Compile Include="Formats\Mzxml\msRunMsInstrument.cs" />
+    <Compile Include="Formats\Mzxml\msRunMsInstrumentMsManufacturer.cs" />
+    <Compile Include="Formats\Mzxml\msRunMsInstrumentMsMassAnalyzer.cs" />
+    <Compile Include="Formats\Mzxml\msRunParentFile.cs" />
+    <Compile Include="Formats\Mzxml\msRunParentFileFileType.cs" />
+    <Compile Include="Formats\Mzxml\msRunSpotting.cs" />
+    <Compile Include="Formats\Mzxml\msRunSpottingPlate.cs" />
+    <Compile Include="Formats\Mzxml\msRunSpottingPlatePattern.cs" />
+    <Compile Include="Formats\Mzxml\msRunSpottingPlatePatternOrientation.cs" />
+    <Compile Include="Formats\Mzxml\msRunSpottingPlateSpot.cs" />
+    <Compile Include="Formats\Mzxml\msRunSpottingRobot.cs" />
+    <Compile Include="Formats\Mzxml\mzXML.cs" />
+    <Compile Include="Formats\Mzxml\mzXMLIndex.cs" />
+    <Compile Include="Formats\Mzxml\mzXMLIndexOffset.cs" />
+    <Compile Include="Formats\Mzxml\namevalueType.cs" />
+    <Compile Include="Formats\Mzxml\ontologyEntryType.cs" />
+    <Compile Include="Formats\Mzxml\scan.cs" />
+    <Compile Include="Formats\Mzxml\scanMaldi.cs" />
+    <Compile Include="Formats\Mzxml\scanPeaks.cs" />
+    <Compile Include="Formats\Mzxml\scanPrecursorMz.cs" />
+    <Compile Include="Formats\Mzxml\scanScanOrigin.cs" />
+    <Compile Include="Formats\Mzxml\separationTechniqueType.cs" />
+    <Compile Include="Formats\Mzxml\software.cs" />
+    <Compile Include="Data.cs" />
+    <Compile Include="Formats\Thermo\Raw.cs" />
+    <Compile Include="Helpers\Spectrum.cs" />
+    <Compile Include="Helpers\XmlUtilities.cs" />
+    <Compile Include="LimpXml.cs" />
+    <Compile Include="MsData.cs" />
+    <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="Helpers\ReportData.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="xsd\mzXML_2.1.xsd">
+      <SubType>Designer</SubType>
+    </None>
+    <None Include="xsd\mzXML_idx_2.1.xsd">
+      <SubType>Designer</SubType>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
+    <NativeReference Include="ThermoRawDump, Version=1.0.0.0">
+      <Name>ThermoRawDump.manifest</Name>
+      <HintPath>libs\ThermoRawDump.manifest</HintPath>
+    </NativeReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Content Include="libs\CDFAPIs.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <COMReference Include="EDAL">
+      <Guid>{8E79B9A2-107E-4E91-A0FF-01F2591103F3}</Guid>
+      <VersionMajor>1</VersionMajor>
+      <VersionMinor>0</VersionMinor>
+      <Lcid>0</Lcid>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Isolated>False</Isolated>
+      <EmbedInteropTypes>True</EmbedInteropTypes>
+    </COMReference>
+  </ItemGroup>
+  <ItemGroup>
+    <WCFMetadata Include="Connected Services\" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>
